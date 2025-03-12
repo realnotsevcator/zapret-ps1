@@ -1,40 +1,48 @@
-name: Sync with sevcator/zapret-ps1
+name: Update Files From Original Repository
 
 on:
   schedule:
-    - cron: '0 */1 * * *'  # Каждый час (GitHub Actions не поддерживает 90 минут)
-  workflow_dispatch:
+    - cron: '*/90 * * * *'  # Каждые 90 минут
+  workflow_dispatch:  # Позволяет запускать workflow вручную
 
 jobs:
-  sync:
+  update:
     runs-on: ubuntu-latest
-
+    
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v2
       with:
         fetch-depth: 0
-
+      
+    - name: Download files
+      run: |
+        cd files
+        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/winws.exe
+        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/cygwin1.dll
+        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/WinDivert.dll
+        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/WinDivert64.sys
+        wget -N --no-if-modified-since https://raw.githubusercontent.com/bol-van/zapret-win-bundle/refs/heads/master/zapret-winws/files/ipset-discord.txt
+        wget -N --no-if-modified-since -O quic-google.bin https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/files/quic_initial_www_google_com.bin
+        wget -N --no-if-modified-since -O tls-google.bin https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/files/tls_clienthello_www_google_com.bin
+        wget -N --no-if-modified-since https://raw.githubusercontent.com/sevcator/zapret-ps1/refs/heads/main/files/zapret.cmd
+        wget -N --no-if-modified-since https://raw.githubusercontent.com/sevcator/zapret-ps1/refs/heads/main/files/zapret-redirect.cmd
+        wget -N --no-if-modified-since https://raw.githubusercontent.com/sevcator/zapret-ps1/refs/heads/main/files/tactics.zip
+        wget -N --no-if-modified-since https://raw.githubusercontent.com/sevcator/zapret-ps1/refs/heads/main/files/list.txt
+        wget -N --no-if-modified-since https://raw.githubusercontent.com/sevcator/zapret-ps1/refs/heads/main/files/list-exclude.txt
+        
     - name: Configure Git
       run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-    - name: Setup upstream
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+    - name: Commit changes
       run: |
-        if ! git remote | grep -q upstream; then
-          git remote add upstream https://github.com/sevcator/zapret-ps1.git
-        fi
-        git fetch upstream
-
-    - name: Get default branch
-      id: default_branch
-      run: |
-        DEFAULT_BRANCH=$(git remote show upstream | grep 'HEAD branch' | cut -d' ' -f5)
-        echo "default_branch=$DEFAULT_BRANCH" >> $GITHUB_OUTPUT
-
-    - name: Checkout and merge
-      run: |
-        git checkout ${{ steps.default_branch.outputs.default_branch }} || 
-          git checkout -b ${{ steps.default_branch.outputs.default_branch }} upstream/${{ steps.default_branch.outputs.default_branch }}
-        git merge upstream/${{ steps.default_branch.outputs.default_branch }} --no-edit
-        git push origin ${{ steps.default_branch.outputs.default_branch }}
+        git add .
+        current_date=$(date '+%Y-%m-%d %H:%M:%S')
+        git commit -m "⚡ Updated at ${current_date}" || echo "No changes to commit"
+        
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}

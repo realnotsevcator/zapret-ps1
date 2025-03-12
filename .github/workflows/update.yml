@@ -1,8 +1,8 @@
-name: Auto-sync Fork
+name: Sync with sevcator/zapret-ps1
 
 on:
   schedule:
-    - cron: '*/90 * * * *'
+    - cron: '0 */1 * * *'  # Каждый час (GitHub Actions не поддерживает 90 минут)
   workflow_dispatch:
 
 jobs:
@@ -10,49 +10,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    - name: Get upstream URL
-      id: get-upstream
-      run: |
-        RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}")
-        
-        UPSTREAM_URL=$(echo "$RESPONSE" | jq -r '.parent.clone_url')
-        
-        if [ "$UPSTREAM_URL" == "null" ]; then
-          echo "::error::This repository is not a fork"
-          exit 1
-        fi
-        
-        echo "::set-output name=upstream_url::$UPSTREAM_URL"
-        
     - name: Configure Git
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
-    - name: Sync with upstream
+    - name: Setup upstream
       run: |
         if ! git remote | grep -q upstream; then
-          git remote add upstream ${{ steps.get-upstream.outputs.upstream_url }}
+          git remote add upstream https://github.com/sevcator/zapret-ps1.git
         fi
-        
         git fetch upstream
-        
-        DEFAULT_BRANCH=$(git remote show upstream | grep 'HEAD branch' | cut -d' ' -f5)
-        git checkout $DEFAULT_BRANCH || git checkout -b $DEFAULT_BRANCH upstream/$DEFAULT_BRANCH
-        
-        git merge upstream/$DEFAULT_BRANCH --no-edit || {
-          echo "::error::Merge conflict occurred. Please resolve manually."
-          exit 1
-        }
-        
-        git push origin $DEFAULT_BRANCH
 
-    - name: Install jq (dependency)
-      if: always()
-      run: sudo apt-get install -y jq
+    - name: Get default branch
+      id: default_branch
+      run: |
+        DEFAULT_BRANCH=$(git remote show upstream | grep 'HEAD branch' | cut -d' ' -f5)
+        echo "default_branch=$DEFAULT_BRANCH" >> $GITHUB_OUTPUT
+
+    - name: Checkout and merge
+      run: |
+        git checkout ${{ steps.default_branch.outputs.default_branch }} || 
+          git checkout -b ${{ steps.default_branch.outputs.default_branch }} upstream/${{ steps.default_branch.outputs.default_branch }}
+        git merge upstream/${{ steps.default_branch.outputs.default_branch }} --no-edit
+        git push origin ${{ steps.default_branch.outputs.default_branch }}

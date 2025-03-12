@@ -1,9 +1,9 @@
-name: Update Files
+name: Update files
 
 on:
   schedule:
-    - cron: '*/90 * * * *'  # Каждые 90 минут
-  workflow_dispatch:  # Позволяет запускать workflow вручную
+    - cron: '*/90 * * * *'
+  workflow_dispatch:
 
 jobs:
   update:

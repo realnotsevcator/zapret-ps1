@@ -1,4 +1,4 @@
-name: Update files
+name: Auto-sync Fork
 
 on:
   schedule:
@@ -6,38 +6,53 @@ on:
   workflow_dispatch:
 
 jobs:
-  update:
+  sync:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout repository
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
-      
-    - name: Download files
+
+    - name: Get upstream URL
+      id: get-upstream
       run: |
-        cd files
-        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/winws.exe
-        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/cygwin1.dll
-        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/WinDivert.dll
-        wget -N --no-if-modified-since https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/WinDivert64.sys
-        wget -N --no-if-modified-since https://raw.githubusercontent.com/bol-van/zapret-win-bundle/refs/heads/master/zapret-winws/files/ipset-discord.txt
-        wget -N --no-if-modified-since -O quic-google.bin https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/files/quic_initial_www_google_com.bin
-        wget -N --no-if-modified-since -O tls-google.bin https://github.com/bol-van/zapret-win-bundle/raw/refs/heads/master/zapret-winws/files/tls_clienthello_www_google_com.bin
+        RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}")
+        
+        UPSTREAM_URL=$(echo "$RESPONSE" | jq -r '.parent.clone_url')
+        
+        if [ "$UPSTREAM_URL" == "null" ]; then
+          echo "::error::This repository is not a fork"
+          exit 1
+        fi
+        
+        echo "::set-output name=upstream_url::$UPSTREAM_URL"
         
     - name: Configure Git
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        
-    - name: Commit changes
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Sync with upstream
       run: |
-        git add .
-        current_date=$(date '+%Y-%m-%d %H:%M:%S')
-        git commit -m "⚡ Updated at ${current_date}" || echo "No changes to commit"
+        if ! git remote | grep -q upstream; then
+          git remote add upstream ${{ steps.get-upstream.outputs.upstream_url }}
+        fi
         
-    - name: Push changes
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: ${{ github.ref }}
+        git fetch upstream
+        
+        DEFAULT_BRANCH=$(git remote show upstream | grep 'HEAD branch' | cut -d' ' -f5)
+        git checkout $DEFAULT_BRANCH || git checkout -b $DEFAULT_BRANCH upstream/$DEFAULT_BRANCH
+        
+        git merge upstream/$DEFAULT_BRANCH --no-edit || {
+          echo "::error::Merge conflict occurred. Please resolve manually."
+          exit 1
+        }
+        
+        git push origin $DEFAULT_BRANCH
+
+    - name: Install jq (dependency)
+      if: always()
+      run: sudo apt-get install -y jq
